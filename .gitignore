@@ -1,0 +1,24 @@
+# Emacs
+*~
+\#*\#
+.\#*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+
+# Test output
+.pytest_cache/
+
+# Coverage
+.coverage
+htmlcov/
+
+# Build artefacts
+dist/
+build/
+*.egg-info/

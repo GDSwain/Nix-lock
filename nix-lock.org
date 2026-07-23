@@ -1,96 +1,201 @@
 #+title: Nix-Lock
 #+author: Oggie
-#+description: A delayed deployment workflow for NixOS
+#+description: A release management workflow for immutable NixOS system closures.
 #+STARTUP: showeverything
 #+OPTIONS: toc:2
 
 * Project Overview
 
-Most software update systems optimize for receiving the newest available version. Nix-Lock instead optimizes for deploying a previously selected version only after it has had time to prove itself in the real world.
+Nix-Lock is a release management workflow for NixOS.
 
-Nix-Lock is a deployment workflow for NixOS.
+Rather than immediately deploying every newly built operating system,
+Nix-Lock intentionally separates the act of building a system from the
+act of deploying it.
 
-Rather than deploying the latest available NixOS revision immediately, Nix-Lock captures an immutable revision at a chosen point in time, preserves that revision unchanged for a configurable observation period, and then intentionally deploys that exact revision.
+A candidate operating system is built, preserved unchanged, observed for
+a configurable period, and only then intentionally deployed.
 
-The project exists to introduce a deliberate delay between *capture* and *deployment* while preserving the normal NixOS user experience.
+The objective is not to delay updates indiscriminately.
+
+The objective is to separate build time from deployment time while
+preserving the normal NixOS administration workflow.
+
+* Core Principle
+
+Nix-Lock treats immutable NixOS system closures as release artifacts
+rather than immediate deployment targets.
+
+Building a system produces an immutable operating system artifact.
+
+Deployment is a separate decision.
+
+During an observation period the candidate remains unchanged while the
+user continues using the computer normally.
+
+After the observation period expires, that exact system closure is
+deployed.
+
+Nix-Lock introduces no new deployment mechanism.
+
+Instead, it coordinates deployment using mechanisms already provided by
+NixOS.
 
 * Background
 
-The project originated from an investigation into whether the publication age of a NixOS channel could be used as a "cooldown timer" before updating.
+The project originated from an investigation into whether the age of a
+NixOS channel could be used as a deployment timer.
 
-The original hypothesis was that waiting until the current channel had existed for a defined period would reduce the likelihood of deploying problematic updates.
+The original hypothesis was that waiting until a channel had existed for
+a defined period would reduce the likelihood of deploying problematic
+updates.
 
-Investigation showed that this approach was fundamentally flawed.
+Investigation demonstrated that this approach was fundamentally flawed.
 
-The publication timestamp describes the age of the current channel head. Because channel heads move whenever a newer revision is promoted, the timer continually resets. It therefore cannot measure the maturity of any particular NixOS revision.
+Channel age describes only the current head of the channel.
 
-The investigation was valuable because it identified the wrong metric and led to a clearer understanding of the real problem.
+Whenever a newer revision is promoted the timer resets.
 
-** Problem Statement
+It therefore cannot measure the maturity of any specific operating
+system.
 
-Current update workflows generally answer the question:
+Although unsuccessful, this investigation identified the wrong problem
+and ultimately led to a better understanding of how NixOS performs
+deployment.
 
-> "What is the latest revision available today?"
+* Fundamental Observation
 
-Nix-Lock asks a different question:
+Experimental investigation demonstrated that the deployable object in
+NixOS is not the configuration.
 
-> "Which previously captured revision has existed long enough to justify deploying?"
+The deployable object is the immutable system closure.
 
-These are not equivalent.
+Configuration describes how to build a system.
 
-The goal is not to delay updates for their own sake.
+A system closure is the finished operating system.
 
-The goal is to separate the act of selecting a revision from the act of deploying it.
+Deployment therefore concerns selecting an already-built operating
+system rather than rebuilding configuration.
 
-** Project Aim
+This distinction forms the conceptual foundation of Nix-Lock.
 
-Capture an immutable NixOS revision.
+* Experimental Findings
 
-Preserve that revision unchanged for a configurable observation period.
+The investigation established that NixOS separates three distinct
+concepts.
 
-Deploy that exact revision at a later date.
+- Editable configuration.
+- Immutable system closures.
+- Running operating systems.
 
-Continue normal day-to-day use of the system throughout the observation period.
+Their relationship is approximately:
 
-** Design Principles
+Configuration
+
+↓
+
+Build
+
+↓
+
+Immutable system closure
+
+↓
+
+Boot / Switch
+
+↓
+
+Running operating system
+
+The running operating system is determined entirely by the activated
+system closure.
+
+The current contents of /etc/nixos are irrelevant until another rebuild
+occurs.
+
+* Problem Statement
+
+Traditional update workflows answer the question:
+
+"What is the newest revision available today?"
+
+Nix-Lock instead asks:
+
+"Which previously-built operating system has completed its observation
+period?"
+
+These are fundamentally different questions.
+
+Nix-Lock concerns deployment scheduling rather than update discovery.
+
+* Project Aim
+
+Build an immutable NixOS system closure.
+
+Preserve that closure unchanged.
+
+Continue using the computer normally.
+
+Deploy that exact closure after a configurable observation period.
+
+Repeat.
+
+* Experimental Validation
+
+The following behaviour has been demonstrated experimentally.
+
+- Systems can be built without activation.
+- Building does not modify the running system.
+- System closures possess stable immutable identities.
+- Identical inputs reproduce identical system closures.
+- Previously-built closures remain deployable.
+- A previously-built closure can be selected as the next boot target.
+- The running system depends on the selected closure rather than the
+  current configuration files.
+- Rebuilding from the current configuration restores the system
+  described by that configuration.
+
+These observations demonstrate that the deployment mechanism required by
+Nix-Lock already exists within standard NixOS.
+
+* Design Principles
 
 - Simplicity before features.
 - Policy before implementation.
 - Preserve existing NixOS workflows wherever possible.
 - Require the minimum practical migration.
 - Introduce no unnecessary complexity.
-- Prefer existing Nix mechanisms over custom solutions.
-- Make deployment intentional rather than automatic.
-- Record decisions using Git wherever practical.
-
-
+- Prefer existing NixOS mechanisms over custom solutions.
+- Separate building from deployment.
+- Preserve immutable deployment candidates.
+- Verify assumptions experimentally whenever possible.
 
 * Scope
 
-** Nix-Lock is responsible for:
+Nix-Lock is responsible for:
 
-*** Capturing a specific NixOS revision.
-*** Separating revision selection from deployment.
-*** Preserving that revision unchanged.
-*** Recording the candidate for later deployment.
-*** Supporting an intentional deployment workflow.
-*** Providing reproducibility.
-*** Supporting configurable observation periods.
+- Building deployment candidates.
+- Recording immutable system closures.
+- Preserving deployment candidates.
+- Separating build time from deployment time.
+- Supporting configurable observation periods.
+- Deploying previously-built system closures.
+- Preserving reproducibility.
 
 * Non-Goals
 
-** Nix-Lock is not intended to:
+Nix-Lock is not intended to:
 
-*** Replace NixOS generations.
-*** Replace backups.
-*** Snapshot user data.
-*** Restore a complete machine to an earlier state.
-*** Predict whether updates are safe.
-*** Test packages.
-*** Replace Git.
-*** Replace existing NixOS tooling.
-*** Require Home Manager.
-*** Require users to redesign an existing modular NixOS configuration.
+- Replace NixOS generations.
+- Replace backups.
+- Snapshot user data.
+- Restore complete machine state.
+- Predict whether updates are safe.
+- Test packages.
+- Replace Git.
+- Replace existing NixOS tooling.
+- Require Home Manager.
+- Require users to redesign existing modular NixOS configurations.
 
 * Guiding Philosophy
 
@@ -98,114 +203,132 @@ Nix-Lock is not an update manager.
 
 It is a release management workflow.
 
-The project is concerned only with deciding *when* a captured NixOS revision should become the running system.
+Its purpose is simply to determine when a previously-built immutable
+operating system should become the running system.
 
 Everything else remains ordinary NixOS administration.
 
 * Terminology
 
-**Revision**
+** Configuration
 
-An immutable upstream NixOS/Nixpkgs state.
+Editable NixOS source describing a future operating system.
 
-**Capture**
+** System Closure
 
-Recording a specific revision for future deployment.
+An immutable deployable operating system stored within the Nix store.
 
-**Candidate**
+** Candidate
 
-A captured revision currently undergoing observation.
+A previously-built system closure awaiting deployment.
 
-**Observation Period**
+** Observation Period
 
-The time between capture and deployment.
+The period between building a candidate and deploying it.
 
-**Deploy**
+** Deployment
 
-Building and activating the captured revision.
+Selecting and activating a previously-built system closure.
 
-**Current**
+** Current
 
-The revision presently running on the system.
+The system closure presently running.
 
-**Latest**
+** Latest
 
-The newest revision currently available upstream.
+The newest configuration currently available for building.
 
 * Conceptual Workflow
 
-1. Capture today's revision.
-2. Continue using the computer normally.
-3. Allow the captured revision to remain under public observation.
-4. Deploy that exact revision.
-5. Capture the next candidate.
-6. Repeat.
+1. Build a candidate system closure.
+2. Record the candidate.
+3. Continue normal use of the computer.
+4. Allow the candidate to remain under observation.
+5. Deploy the candidate.
+6. Build the next candidate.
+7. Repeat.
 
 * User Experience
 
-Normal operation should remain unchanged.
+Normal day-to-day use of the computer should remain unchanged.
 
-Nix-Lock is intended to change the timing of system deployment, not the way users interact with their systems.
+Users continue editing documents, writing software, browsing the web,
+and maintaining their systems exactly as they do today.
 
-Users continue using their computers exactly as they do today.
+Only the timing of operating system deployment changes.
 
-Documents, photographs, downloads, Git repositories, and other personal data continue to evolve naturally.
-
-The only behavioural difference should be that system updates are intentionally delayed.
+Mutable user data continues evolving naturally throughout the observation
+period.
 
 * Success Criteria
 
-** The project will be considered successful if it can:
+The project will be considered successful if it can:
 
-*** Capture an exact NixOS revision.
-*** Deploy that exact revision after an arbitrary observation period.
-*** Preserve reproducibility.
-*** Require only minimal changes to an existing modular NixOS configuration.
-*** Avoid increasing day-to-day operational complexity.
-*** Feel like ordinary NixOS administration with one additional concept: delayed deployment.
+- Build immutable deployment candidates.
+- Deploy previously-built candidates.
+- Preserve reproducibility.
+- Require only minimal changes to existing NixOS workflows.
+- Avoid increasing day-to-day operational complexity.
+- Feel like ordinary NixOS administration with one additional concept:
+  delayed deployment.
 
 * Implementation Principles
 
 Implementation details are intentionally secondary.
 
-The implementation should satisfy the project requirements rather than define them.
+The implementation should satisfy the project requirements rather than
+define them.
 
-** Possible implementations include:
-
-*** A minimal flake wrapper.
-*** Other mechanisms capable of preserving an immutable revision.
-
-The implementation will be chosen according to simplicity, maintainability, and suitability—not popularity.
+The simplest implementation that faithfully satisfies the project
+objectives should always be preferred.
 
 * Proof of Concept
 
-The first implementation should be performed manually.
+The initial implementation should remain manual.
 
 The objective is to validate the workflow rather than automate it.
 
-Automation will only be considered after sufficient operational evidence has been collected.
+Automation should only be considered after sufficient operational
+evidence has been collected.
+
+Experimental investigation has demonstrated that the required deployment
+mechanism already exists within standard NixOS.
 
 * Future Work
 
-** Potential future work includes:
+Potential future work includes:
 
-*** Candidate status reporting.
-*** Observation period tracking.
-*** Deployment reminders.
-*** Optional automation.
-*** Git integration.
-*** Release metadata.
-*** Multi-host support.
-*** Documentation and user guides.
+- Candidate metadata.
+- Observation period tracking.
+- Garbage collection protection.
+- Deployment scheduling.
+- Deployment reminders.
+- Optional automation.
+- Git integration.
+- Multi-host support.
+- Documentation and user guides.
 
 * Acceptance Criteria
 
-The project should be abandoned or redesigned if achieving its objectives requires unnecessary complexity or significantly alters the normal NixOS administration workflow.
+The project should be abandoned or redesigned if achieving its
+objectives requires unnecessary complexity or significantly alters the
+normal NixOS administration workflow.
 
-The simplest implementation that faithfully satisfies the project's objectives should always be preferred.
+The simplest implementation that faithfully satisfies the project's
+objectives should always be preferred.
 
 * Project Statement
 
-Nix-Lock captures the exact NixOS revision available at a chosen point in time, preserves that revision for a defined observation period, and intentionally deploys that exact revision later.
+Nix-Lock is a release management workflow for NixOS.
 
-Its purpose is not to delay updates indiscriminately, but to separate capture from deployment while preserving the normal NixOS user experience.
+It treats immutable NixOS system closures as release artifacts rather
+than immediate deployment targets.
+
+Candidate operating systems are built once, preserved unchanged,
+observed for a configurable period, and intentionally deployed later.
+
+Nix-Lock introduces no new deployment mechanism.
+
+It provides policy around *when* immutable operating system artifacts
+should be deployed while relying entirely upon the deployment mechanisms
+already present within NixOS.
