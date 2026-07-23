@@ -1,0 +1,211 @@
+#+title: Nix-Lock
+#+author: Oggie
+#+description: A delayed deployment workflow for NixOS
+#+STARTUP: showeverything
+#+OPTIONS: toc:2
+
+* Project Overview
+
+Most software update systems optimize for receiving the newest available version. Nix-Lock instead optimizes for deploying a previously selected version only after it has had time to prove itself in the real world.
+
+Nix-Lock is a deployment workflow for NixOS.
+
+Rather than deploying the latest available NixOS revision immediately, Nix-Lock captures an immutable revision at a chosen point in time, preserves that revision unchanged for a configurable observation period, and then intentionally deploys that exact revision.
+
+The project exists to introduce a deliberate delay between *capture* and *deployment* while preserving the normal NixOS user experience.
+
+* Background
+
+The project originated from an investigation into whether the publication age of a NixOS channel could be used as a "cooldown timer" before updating.
+
+The original hypothesis was that waiting until the current channel had existed for a defined period would reduce the likelihood of deploying problematic updates.
+
+Investigation showed that this approach was fundamentally flawed.
+
+The publication timestamp describes the age of the current channel head. Because channel heads move whenever a newer revision is promoted, the timer continually resets. It therefore cannot measure the maturity of any particular NixOS revision.
+
+The investigation was valuable because it identified the wrong metric and led to a clearer understanding of the real problem.
+
+** Problem Statement
+
+Current update workflows generally answer the question:
+
+> "What is the latest revision available today?"
+
+Nix-Lock asks a different question:
+
+> "Which previously captured revision has existed long enough to justify deploying?"
+
+These are not equivalent.
+
+The goal is not to delay updates for their own sake.
+
+The goal is to separate the act of selecting a revision from the act of deploying it.
+
+** Project Aim
+
+Capture an immutable NixOS revision.
+
+Preserve that revision unchanged for a configurable observation period.
+
+Deploy that exact revision at a later date.
+
+Continue normal day-to-day use of the system throughout the observation period.
+
+** Design Principles
+
+- Simplicity before features.
+- Policy before implementation.
+- Preserve existing NixOS workflows wherever possible.
+- Require the minimum practical migration.
+- Introduce no unnecessary complexity.
+- Prefer existing Nix mechanisms over custom solutions.
+- Make deployment intentional rather than automatic.
+- Record decisions using Git wherever practical.
+
+
+
+* Scope
+
+** Nix-Lock is responsible for:
+
+*** Capturing a specific NixOS revision.
+*** Separating revision selection from deployment.
+*** Preserving that revision unchanged.
+*** Recording the candidate for later deployment.
+*** Supporting an intentional deployment workflow.
+*** Providing reproducibility.
+*** Supporting configurable observation periods.
+
+* Non-Goals
+
+** Nix-Lock is not intended to:
+
+*** Replace NixOS generations.
+*** Replace backups.
+*** Snapshot user data.
+*** Restore a complete machine to an earlier state.
+*** Predict whether updates are safe.
+*** Test packages.
+*** Replace Git.
+*** Replace existing NixOS tooling.
+*** Require Home Manager.
+*** Require users to redesign an existing modular NixOS configuration.
+
+* Guiding Philosophy
+
+Nix-Lock is not an update manager.
+
+It is a release management workflow.
+
+The project is concerned only with deciding *when* a captured NixOS revision should become the running system.
+
+Everything else remains ordinary NixOS administration.
+
+* Terminology
+
+**Revision**
+
+An immutable upstream NixOS/Nixpkgs state.
+
+**Capture**
+
+Recording a specific revision for future deployment.
+
+**Candidate**
+
+A captured revision currently undergoing observation.
+
+**Observation Period**
+
+The time between capture and deployment.
+
+**Deploy**
+
+Building and activating the captured revision.
+
+**Current**
+
+The revision presently running on the system.
+
+**Latest**
+
+The newest revision currently available upstream.
+
+* Conceptual Workflow
+
+1. Capture today's revision.
+2. Continue using the computer normally.
+3. Allow the captured revision to remain under public observation.
+4. Deploy that exact revision.
+5. Capture the next candidate.
+6. Repeat.
+
+* User Experience
+
+Normal operation should remain unchanged.
+
+Nix-Lock is intended to change the timing of system deployment, not the way users interact with their systems.
+
+Users continue using their computers exactly as they do today.
+
+Documents, photographs, downloads, Git repositories, and other personal data continue to evolve naturally.
+
+The only behavioural difference should be that system updates are intentionally delayed.
+
+* Success Criteria
+
+** The project will be considered successful if it can:
+
+*** Capture an exact NixOS revision.
+*** Deploy that exact revision after an arbitrary observation period.
+*** Preserve reproducibility.
+*** Require only minimal changes to an existing modular NixOS configuration.
+*** Avoid increasing day-to-day operational complexity.
+*** Feel like ordinary NixOS administration with one additional concept: delayed deployment.
+
+* Implementation Principles
+
+Implementation details are intentionally secondary.
+
+The implementation should satisfy the project requirements rather than define them.
+
+** Possible implementations include:
+
+*** A minimal flake wrapper.
+*** Other mechanisms capable of preserving an immutable revision.
+
+The implementation will be chosen according to simplicity, maintainability, and suitability—not popularity.
+
+* Proof of Concept
+
+The first implementation should be performed manually.
+
+The objective is to validate the workflow rather than automate it.
+
+Automation will only be considered after sufficient operational evidence has been collected.
+
+* Future Work
+
+** Potential future work includes:
+
+*** Candidate status reporting.
+*** Observation period tracking.
+*** Deployment reminders.
+*** Optional automation.
+*** Git integration.
+*** Release metadata.
+*** Multi-host support.
+*** Documentation and user guides.
+
+* Acceptance Criteria
+
+The project should be abandoned or redesigned if achieving its objectives requires unnecessary complexity or significantly alters the normal NixOS administration workflow.
+
+The simplest implementation that faithfully satisfies the project's objectives should always be preferred.
+
+* Project Statement
+
+Nix-Lock captures the exact NixOS revision available at a chosen point in time, preserves that revision for a defined observation period, and intentionally deploys that exact revision later.
+
+Its purpose is not to delay updates indiscriminately, but to separate capture from deployment while preserving the normal NixOS user experience.
