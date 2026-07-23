@@ -238,6 +238,52 @@ The system closure presently running.
 
 The newest configuration currently available for building.
 
+* Candidate Model
+
+A Candidate is a previously-built immutable NixOS system closure recorded
+by Nix-Lock for later deployment.
+
+The minimum Candidate record contains:
+
+*** =id= - The =id= uniquely identifies the Candidate within Nix-Lock.
+*** =closure_path= - The =closure_path= references exactly one immutable NixOS system closure.
+*** =created_at= - The =created_at= value records when the Candidate was created.
+*** =state= - The =state= records the Candidate's current lifecycle state.
+
+
+The following invariants apply:
+** A Candidate references exactly one system closure.
+** A Candidate's =id= never changes.
+** A Candidate's =closure_path= never changes.
+** Only the Candidate's =state= may change.
+
+Additional metadata should only be introduced when operational experience
+demonstrates a clear requirement.
+
+
+* Initial Command: Build
+
+The first implemented command should be:
+
+#+begin_src sh
+nix-lock build
+#+end_src
+
+The command should:
+
+1. Build the current NixOS configuration without activating it.
+2. Obtain the resulting system closure path.
+3. Create a Candidate record.
+4. Assign the Candidate an initial state of =pending=.
+5. Preserve the system closure from garbage collection.
+6. Report the Candidate identifier and closure path.
+
+The command must not alter the currently running system.
+
+The command should use existing NixOS build mechanisms rather than
+introducing a separate build process.
+
+
 * Conceptual Workflow
 
 1. Build a candidate system closure.
