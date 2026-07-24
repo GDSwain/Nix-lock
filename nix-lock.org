@@ -1,6 +1,6 @@
-#+title: Nix-Lock
-#+author: Oggie
-#+description: A release management workflow for immutable NixOS system closures.
+#+TITLE: Nix-Lock
+#+AUTHOR: Oggie
+#+DESCRIPTION: A release management workflow for immutable NixOS system closures.
 #+STARTUP: showeverything
 #+OPTIONS: toc:2
 
@@ -89,6 +89,7 @@ concepts.
 
 Their relationship is approximately:
 
+#+begin_example
 Configuration
 
 ↓
@@ -106,23 +107,28 @@ Boot / Switch
 ↓
 
 Running operating system
+#+end_example
 
 The running operating system is determined entirely by the activated
 system closure.
 
-The current contents of /etc/nixos are irrelevant until another rebuild
+The current contents of =/etc/nixos= are irrelevant until another rebuild
 occurs.
 
 * Problem Statement
 
 Traditional update workflows answer the question:
 
+#+begin_quote
 "What is the newest revision available today?"
+#+end_quote
 
 Nix-Lock instead asks:
 
+#+begin_quote
 "Which previously-built operating system has completed its observation
 period?"
+#+end_quote
 
 These are fundamentally different questions.
 
@@ -140,6 +146,45 @@ Deploy that exact closure after a configurable observation period.
 
 Repeat.
 
+* Architectural Simplification
+
+Early designs assumed that Nix-Lock would need to maintain its own
+repository of deployment candidates.
+
+Experimental implementation demonstrated that this assumption was
+incorrect.
+
+Nix already stores immutable system closures.
+
+Nix already assigns stable identities to those closures.
+
+Nix already manages garbage collection.
+
+The only responsibility remaining for Nix-Lock is to identify which
+existing closure should be deliberately retained.
+
+Rather than introducing its own storage mechanism, Nix-Lock now owns
+exactly one persistent garbage collection root.
+
+#+begin_example
+~/.local/state/nix-lock/candidate
+#+end_example
+
+This root simultaneously:
+
+- identifies the current Candidate
+- protects the Candidate from garbage collection
+- provides a stable inspection point
+
+The implementation therefore became substantially smaller than originally
+anticipated.
+
+Rather than replacing existing Nix behaviour, Nix-Lock now relies almost
+entirely upon it.
+
+This simplification represents the largest architectural change made
+during development.
+
 * Experimental Validation
 
 The following behaviour has been demonstrated experimentally.
@@ -150,13 +195,11 @@ The following behaviour has been demonstrated experimentally.
 - Identical inputs reproduce identical system closures.
 - Previously-built closures remain deployable.
 - A previously-built closure can be selected as the next boot target.
-- The running system depends on the selected closure rather than the
-  current configuration files.
-- Rebuilding from the current configuration restores the system
-  described by that configuration.
+- A system closure can be deliberately preserved using a persistent GC root.
+- The running system depends on the selected closure rather than the current configuration files.
+- Rebuilding from the current configuration restores the system described by that configuration.
 
-These observations demonstrate that the deployment mechanism required by
-Nix-Lock already exists within standard NixOS.
+These observations demonstrate that the deployment mechanism required by Nix-Lock already exists within standard NixOS.
 
 * Design Principles
 
@@ -174,28 +217,28 @@ Nix-Lock already exists within standard NixOS.
 
 Nix-Lock is responsible for:
 
-- Building deployment candidates.
-- Recording immutable system closures.
-- Preserving deployment candidates.
-- Separating build time from deployment time.
-- Supporting configurable observation periods.
-- Deploying previously-built system closures.
-- Preserving reproducibility.
+** Building deployment candidates.
+** Recording immutable system closures.
+** Preserving deployment candidates.
+** Separating build time from deployment time.
+** Supporting configurable observation periods.
+** Deploying previously-built system closures.
+** Preserving reproducibility.
 
 * Non-Goals
 
 Nix-Lock is not intended to:
 
-- Replace NixOS generations.
-- Replace backups.
-- Snapshot user data.
-- Restore complete machine state.
-- Predict whether updates are safe.
-- Test packages.
-- Replace Git.
-- Replace existing NixOS tooling.
-- Require Home Manager.
-- Require users to redesign existing modular NixOS configurations.
+** Replace NixOS generations.
+** Replace backups.
+** Snapshot user data.
+** Restore complete machine state.
+** Predict whether updates are safe.
+** Test packages.
+** Replace Git.
+** Replace existing NixOS tooling.
+** Require Home Manager.
+** Require users to redesign existing modular NixOS configurations.
 
 * Guiding Philosophy
 
@@ -220,7 +263,18 @@ An immutable deployable operating system stored within the Nix store.
 
 ** Candidate
 
-A previously-built system closure awaiting deployment.
+A Candidate is a previously-built immutable NixOS system closure that
+Nix-Lock has deliberately retained for future deployment.
+
+Conceptually, a Candidate consists of:
+
+- one immutable system closure
+- one persistent GC root identifying that closure
+
+The closure itself remains the authoritative object.
+
+Metadata may be associated with a Candidate in future implementations,
+but it is secondary to the immutable closure.
 
 ** Observation Period
 
@@ -238,29 +292,6 @@ The system closure presently running.
 
 The newest configuration currently available for building.
 
-* Candidate Model
-
-A Candidate is a previously-built immutable NixOS system closure recorded
-by Nix-Lock for later deployment.
-
-The minimum Candidate record contains:
-
-*** =id= - The =id= uniquely identifies the Candidate within Nix-Lock.
-*** =closure_path= - The =closure_path= references exactly one immutable NixOS system closure.
-*** =created_at= - The =created_at= value records when the Candidate was created.
-*** =state= - The =state= records the Candidate's current lifecycle state.
-
-
-The following invariants apply:
-** A Candidate references exactly one system closure.
-** A Candidate's =id= never changes.
-** A Candidate's =closure_path= never changes.
-** Only the Candidate's =state= may change.
-
-Additional metadata should only be introduced when operational experience
-demonstrates a clear requirement.
-
-
 * Initial Command: Build
 
 The first implemented command should be:
@@ -272,22 +303,20 @@ nix-lock build
 The command should:
 
 1. Build the current NixOS configuration without activating it.
-2. Obtain the resulting system closure path.
-3. Create a Candidate record.
-4. Assign the Candidate an initial state of =pending=.
-5. Preserve the system closure from garbage collection.
-6. Report the Candidate identifier and closure path.
+2. Obtain the resulting immutable system closure.
+3. Create a persistent GC root identifying that closure.
+4. Verify that the retained closure is a valid NixOS system.
+5. Report the retained Candidate.
 
 The command must not alter the currently running system.
 
 The command should use existing NixOS build mechanisms rather than
 introducing a separate build process.
 
-
 * Conceptual Workflow
 
 1. Build a candidate system closure.
-2. Record the candidate.
+2. Preserve the candidate.
 3. Continue normal use of the computer.
 4. Allow the candidate to remain under observation.
 5. Deploy the candidate.
@@ -306,17 +335,39 @@ Only the timing of operating system deployment changes.
 Mutable user data continues evolving naturally throughout the observation
 period.
 
+* Current Status
+
+The project has completed its first implementation milestone.
+
+* Nix-Lock can now:
+
+** Build immutable deployment candidates.
+** Preserve candidates using persistent GC roots.
+** Inspect retained candidates.
+** Safely replace previously retained candidates.
+
+The implementation is now intentionally entering an operational phase.
+
+The retained Candidate will remain untouched while the computer
+continues through ordinary daily use.
+
+The purpose of this experiment is to demonstrate that a deliberately
+retained immutable system closure survives normal system evolution and
+remains deployable after an extended observation period.
+
+Activation of the retained Candidate will become the next implementation
+milestone.
+
 * Success Criteria
 
 The project will be considered successful if it can:
 
-- Build immutable deployment candidates.
-- Deploy previously-built candidates.
-- Preserve reproducibility.
-- Require only minimal changes to existing NixOS workflows.
-- Avoid increasing day-to-day operational complexity.
-- Feel like ordinary NixOS administration with one additional concept:
-  delayed deployment.
+** Build immutable deployment candidates.
+** Deploy previously-built candidates.
+** Preserve reproducibility.
+** Require only minimal changes to existing NixOS workflows.
+** Avoid increasing day-to-day operational complexity.
+** Feel like ordinary NixOS administration with one additional concept: delayed deployment.
 
 * Implementation Principles
 
@@ -327,6 +378,10 @@ define them.
 
 The simplest implementation that faithfully satisfies the project
 objectives should always be preferred.
+
+Whenever implementation becomes simpler by relying on an existing Nix
+mechanism, that approach should be preferred over introducing new
+abstractions.
 
 * Proof of Concept
 
@@ -340,21 +395,23 @@ evidence has been collected.
 Experimental investigation has demonstrated that the required deployment
 mechanism already exists within standard NixOS.
 
+The current phase of the project extends that validation by proving that
+retained Candidates survive ordinary system use before being deployed.
+
 * Future Work
 
 Potential future work includes:
 
-- Candidate metadata.
-- Observation period tracking.
-- Garbage collection protection.
-- Deployment scheduling.
-- Deployment reminders.
-- Optional automation.
-- Git integration.
-- Multi-host support.
-- Documentation and user guides.
+** Candidate annotations.
+** Observation period tracking.
+** Deployment scheduling.
+** Deployment reminders.
+** Optional automation.
+** Git integration.
+** Multi-host support.
+** Documentation and user guides.
 
-* Acceptance Criteria
+- Acceptance Criteria
 
 The project should be abandoned or redesigned if achieving its
 objectives requires unnecessary complexity or significantly alters the
@@ -367,14 +424,12 @@ objectives should always be preferred.
 
 Nix-Lock is a release management workflow for NixOS.
 
-It treats immutable NixOS system closures as release artifacts rather
-than immediate deployment targets.
+It treats immutable NixOS system closures as release artifacts rather than immediate deployment targets.
 
-Candidate operating systems are built once, preserved unchanged,
-observed for a configurable period, and intentionally deployed later.
+Candidate operating systems are built once, preserved unchanged, observed for a configurable period, and intentionally deployed later.
 
 Nix-Lock introduces no new deployment mechanism.
 
-It provides policy around *when* immutable operating system artifacts
-should be deployed while relying entirely upon the deployment mechanisms
-already present within NixOS.
+It provides policy around *when* immutable operating system artifacts should be deployed while relying entirely upon the deployment mechanisms already present within NixOS.
+
+-- Oggie --

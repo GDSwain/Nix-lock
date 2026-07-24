@@ -7,11 +7,91 @@ import sys
 import tempfile
 
 
-STATE_DIR = Path(".nix-lock")
-CANDIDATE_FILE = STATE_DIR / "candidate"
+def get_state_dir() -> Path:
+    xdg_state_home = os.environ.get("XDG_STATE_HOME")
+
+    if xdg_state_home:
+        return Path(xdg_state_home).expanduser() / "nix-lock"
+
+    return Path.home() / ".local" / "state" / "nix-lock"
+
+
+STATE_DIR = get_state_dir()
+CANDIDATE_ROOT = STATE_DIR / "candidate"
+
+
+def run(command: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        command,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+
+def is_store_path(path: Path) -> bool:
+    try:
+        path.relative_to("/nix/store")
+    except ValueError:
+        return False
+
+    return True
+
+
+def read_candidate() -> Path | None:
+    if not CANDIDATE_ROOT.is_symlink():
+        return None
+
+    try:
+        candidate = CANDIDATE_ROOT.resolve(strict=True)
+    except FileNotFoundError:
+        raise RuntimeError(
+            f"Candidate root is broken: {CANDIDATE_ROOT}"
+        ) from None
+
+    if not is_store_path(candidate):
+        raise RuntimeError(
+            f"Candidate root points outside the Nix store: {candidate}"
+        )
+
+    return candidate
+
+
+def add_gc_root(root: Path, closure: Path) -> None:
+    if root.exists() or root.is_symlink():
+        raise RuntimeError(f"GC root already exists: {root}")
+
+    run(
+        [
+            "nix-store",
+            "--add-root",
+            str(root),
+            "--indirect",
+            "-r",
+            str(closure),
+        ]
+    )
+
+    if not root.is_symlink():
+        raise RuntimeError(f"Nix did not create the GC root: {root}")
+
+    rooted_closure = root.resolve(strict=True)
+
+    if rooted_closure != closure:
+        raise RuntimeError(
+            "GC root points to an unexpected closure: "
+            f"{rooted_closure}"
+        )
+
+
+def remove_root(root: Path) -> None:
+    if root.exists() or root.is_symlink():
+        root.unlink()
 
 
 def capture() -> None:
+    old_candidate = read_candidate()
+
     subprocess.run(
         ["nixos-rebuild", "build"],
         check=True,
@@ -20,50 +100,119 @@ def capture() -> None:
     result = Path("result")
 
     if not result.is_symlink():
-        raise RuntimeError("nixos-rebuild completed, but no result symlink was found")
+        raise RuntimeError(
+            "nixos-rebuild completed, but no result symlink was found"
+        )
 
     closure_path = result.resolve(strict=True)
 
-    if not str(closure_path).startswith("/nix/store/"):
+    if not is_store_path(closure_path):
         raise RuntimeError(f"Unexpected closure path: {closure_path}")
 
-    STATE_DIR.mkdir(exist_ok=True)
+    expected_switch_program = (
+        closure_path / "bin" / "switch-to-configuration"
+    )
 
-    fd, temporary_name = tempfile.mkstemp(
-        dir=STATE_DIR,
-        prefix=".candidate.",
-        text=True,
+    if not expected_switch_program.is_file():
+        raise RuntimeError(
+            "Built path does not appear to be a NixOS system closure: "
+            f"{closure_path}"
+        )
+
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+
+    temporary_root = Path(
+        tempfile.mktemp(
+            dir=STATE_DIR,
+            prefix=".candidate-new.",
+        )
     )
 
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as temporary_file:
-            temporary_file.write(f"{closure_path}\n")
+        # Protect the new closure before touching the old candidate.
+        add_gc_root(temporary_root, closure_path)
 
-        os.replace(temporary_name, CANDIDATE_FILE)
-    except Exception:
-        Path(temporary_name).unlink(missing_ok=True)
-        raise
+        # Remove only the root owned by Nix-Lock.
+        remove_root(CANDIDATE_ROOT)
+
+        try:
+            # Install the stable, human-readable candidate root.
+            add_gc_root(CANDIDATE_ROOT, closure_path)
+        except Exception:
+            # Restore the previous candidate if replacement fails.
+            if old_candidate is not None:
+                add_gc_root(CANDIDATE_ROOT, old_candidate)
+
+            raise
+
+    finally:
+        remove_root(temporary_root)
+
+    # The Nix-Lock root now protects the closure. The build result link is
+    # no longer needed and should not provide a second, hidden reference.
+    result.unlink(missing_ok=True)
 
     print()
-    print("Candidate captured")
+    print("Candidate captured and locked")
     print(f"Closure: {closure_path}")
+    print(f"GC root: {CANDIDATE_ROOT}")
+
+    if old_candidate is not None:
+        print(f"Previous candidate released: {old_candidate}")
+
+
+def status() -> None:
+    candidate = read_candidate()
+
+    if candidate is None:
+        print("No locked candidate exists.")
+        return
+
+    switch_program = candidate / "bin" / "switch-to-configuration"
+
+    print("Locked candidate")
+    print(f"Closure: {candidate}")
+    print(f"GC root: {CANDIDATE_ROOT}")
+    print("Store path: present")
+    print("GC protection: present")
+
+    if switch_program.is_file():
+        print("NixOS system closure: valid")
+    else:
+        print("NixOS system closure: INVALID")
 
 
 def main() -> None:
-    if len(sys.argv) != 2 or sys.argv[1] != "capture":
-        print("Usage: python3 nix_lock.py capture", file=sys.stderr)
+    if len(sys.argv) != 2 or sys.argv[1] not in {"capture", "status"}:
+        print(
+            "Usage: python3 nix_lock.py {capture|status}",
+            file=sys.stderr,
+        )
         raise SystemExit(2)
 
     try:
-        capture()
+        command = sys.argv[1]
+
+        if command == "capture":
+            capture()
+        else:
+            status()
+
     except subprocess.CalledProcessError as error:
+        stderr = error.stderr.strip() if error.stderr else ""
+
         print(
-            f"Build failed with exit code {error.returncode}.",
+            f"Command failed with exit code {error.returncode}.",
             file=sys.stderr,
         )
+
+        if stderr:
+            print(stderr, file=sys.stderr)
+
         raise SystemExit(error.returncode)
+
     except Exception as error:
-        print(f"Capture failed: {error}", file=sys.stderr)
+        print(f"Nix-Lock failed: {error}", file=sys.stderr)
         raise SystemExit(1)
 
 
