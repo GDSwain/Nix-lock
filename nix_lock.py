@@ -182,10 +182,55 @@ def status() -> None:
         print("NixOS system closure: INVALID")
 
 
+def deploy() -> None:
+    candidate = read_candidate()
+
+    if candidate is None:
+        raise RuntimeError("No locked candidate exists.")
+
+    switch_program = candidate / "bin" / "switch-to-configuration"
+
+    if not switch_program.is_file():
+        raise RuntimeError(
+            "Locked candidate is not a valid NixOS system closure: "
+            f"{candidate}"
+        )
+
+    current_system = Path("/run/current-system").resolve(strict=True)
+
+    print("Deploying locked candidate")
+    print(f"Current:   {current_system}")
+    print(f"Candidate: {candidate}")
+    print()
+
+    if current_system == candidate:
+        print("Candidate is already active.")
+        return
+
+    subprocess.run(
+        ["sudo", str(switch_program), "switch"],
+        check=True,
+    )
+
+    active_system = Path("/run/current-system").resolve(strict=True)
+
+    if active_system != candidate:
+        raise RuntimeError(
+            "Deployment completed, but the active system does not "
+            f"match the candidate: {active_system}"
+        )
+
+    print()
+    print("Candidate deployed")
+    print(f"Active system: {active_system}")
+
+
 def main() -> None:
-    if len(sys.argv) != 2 or sys.argv[1] not in {"capture", "status"}:
+    valid_commands = {"capture", "status", "deploy"}
+
+    if len(sys.argv) != 2 or sys.argv[1] not in valid_commands:
         print(
-            "Usage: python3 nix_lock.py {capture|status}",
+            "Usage: python3 nix_lock.py {capture|status|deploy}",
             file=sys.stderr,
         )
         raise SystemExit(2)
@@ -195,8 +240,10 @@ def main() -> None:
 
         if command == "capture":
             capture()
-        else:
+        elif command == "status":
             status()
+        else:
+            deploy()
 
     except subprocess.CalledProcessError as error:
         stderr = error.stderr.strip() if error.stderr else ""
