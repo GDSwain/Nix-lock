@@ -1,70 +1,60 @@
 # Nix-Lock
 
-*A delayed deployment workflow for NixOS.*
+*A delayed deployment experiment for NixOS.*
+
+**Project status: Discontinued — experimental proof of concept.**
 
 ## What is Nix-Lock?
 
-Most update workflows answer the question:
+Nix-Lock was developed to investigate whether NixOS system updates could be built, preserved, and deployed after a defined observation period.
 
-> **“What is the latest version available?”**
+Rather than immediately activating a newly built operating system, Nix-Lock separated the process into three stages:
 
-Nix-Lock answers a different question:
+```text
+Capture → Observe → Deploy
+```
 
-> **“Which previously captured operating system has completed its observation period?”**
+The intention was to introduce a delay between building and deploying updates while allowing ordinary system administration to continue.
 
-Rather than immediately deploying every newly built NixOS system, Nix-Lock separates the act of building a system from the act of deploying it.
+The project successfully demonstrated the underlying mechanism. However, subsequent evaluation established that the resulting behaviour did not satisfy the original requirements.
 
-A candidate system is built once, preserved unchanged, allowed to complete an observation period, and intentionally deployed later.
+**Development has ended, and Nix-Lock is retained as a documented engineering experiment.**
 
-The result is a release management workflow that separates **candidate capture** from **deployment** while preserving the normal NixOS administration experience.
+## Motivation
 
-## Why?
+Software updates occasionally introduce regressions, incompatibilities, or unexpected behaviour.
 
-New software releases occasionally introduce regressions, incompatibilities, or unexpected behaviour.
+One approach to reducing this risk is to delay deployment until a particular software revision has completed an observation period.
 
-Many users respond by waiting before updating. However, waiting manually usually means installing whatever revision happens to be current when the waiting period ends.
+Simply waiting before updating is insufficient because the available software may change during that period.
 
-That is not the same as allowing one specific revision to complete an observation period.
+Nix-Lock attempted to address this by capturing an exact immutable NixOS system closure, preserving it unchanged, and deploying that same closure later.
 
-Nix-Lock solves this by building and preserving an exact immutable NixOS system closure at a chosen point in time.
-
-That same closure can then be deployed later, regardless of how the available configuration or package sources have changed in the meantime.
-
-The goal is not to avoid updates.
-
-The goal is to make deployment intentional.
+The objective was to make deployment deliberate without unnecessarily complicating normal NixOS administration.
 
 ## How It Works
 
-The workflow is deliberately simple:
+The experimental workflow consisted of:
 
-```text
-Capture → Observe → Deploy → Repeat
-```
+1. Building the current NixOS configuration without activating it.
+2. Identifying the resulting immutable system closure.
+3. Preserving that closure using a persistent garbage-collection root.
+4. Continuing normal system use and maintenance.
+5. Allowing an observation period to pass.
+6. Activating the previously captured closure.
+7. Verifying that the intended closure became the running system.
 
-1. Build the current NixOS configuration without activating it.
-2. Preserve the resulting immutable system closure.
-3. Continue using and maintaining the computer normally.
-4. Allow the candidate to complete its observation period unchanged.
-5. Deploy that exact candidate.
-6. Capture the next candidate.
-
-Personal files, documents, development work, and ordinary system use continue normally.
-
-Only the timing of operating system deployment changes.
-
-The observation period is a matter of deployment policy. Nix-Lock does not attempt to decide how long a candidate should be retained before deployment.
+The observation period was determined by the user rather than enforced by Nix-Lock.
 
 ## Usage
 
-Enter the Nix-Lock development environment:
+Enter the development environment:
 
 ```bash
-cd ~/Nix-lock
 nix-shell
 ```
 
-The current command interface is:
+The proof-of-concept interface provides three commands:
 
 ```text
 python3 nix_lock.py {capture|status|deploy}
@@ -76,11 +66,11 @@ python3 nix_lock.py {capture|status|deploy}
 python3 nix_lock.py capture
 ```
 
-`capture` builds the current NixOS configuration without activating it.
+Builds the current NixOS configuration without activating it.
 
-The resulting system closure is validated and retained using Nix-Lock's persistent garbage-collection root.
+The resulting system closure is validated and retained using a persistent garbage-collection root.
 
-If an earlier candidate exists, Nix-Lock protects the new candidate before releasing its own reference to the previous candidate.
+When replacing an existing candidate, Nix-Lock protects the new closure before releasing its reference to the previous candidate.
 
 ### Status
 
@@ -88,11 +78,11 @@ If an earlier candidate exists, Nix-Lock protects the new candidate before relea
 python3 nix_lock.py status
 ```
 
-`status` reports the currently retained candidate and verifies:
+Reports the retained candidate and verifies that:
 
-* the store path is present
-* garbage-collection protection is present
-* the candidate contains a valid NixOS system activation program
+- The store path exists.
+- Garbage-collection protection is present.
+- The candidate contains a valid NixOS system activation program.
 
 ### Deploy
 
@@ -100,88 +90,74 @@ python3 nix_lock.py status
 python3 nix_lock.py deploy
 ```
 
-`deploy` activates the exact retained candidate.
+Activates the exact previously captured system closure.
 
-It does not rebuild the current configuration or attempt to reproduce the candidate from current package sources.
+The command does not rebuild the current configuration or reconstruct the candidate from current package sources.
 
-After deployment, Nix-Lock verifies that `/run/current-system` resolves to the retained candidate closure.
+After activation, Nix-Lock verifies that `/run/current-system` resolves to the retained candidate.
 
-A new candidate can then be captured for the next observation cycle.
+**These commands are preserved for historical and educational purposes. Nix-Lock is not recommended as a production deployment workflow.**
 
 ## Architecture
 
-Nix-Lock does not maintain its own archive of operating systems.
+Nix-Lock deliberately avoided implementing its own operating system archive.
 
-Nix already stores immutable system closures and already provides the mechanisms required to protect and activate them.
+Nix already provides immutable system closures, stable store paths, garbage collection, and system activation mechanisms.
 
-Nix-Lock therefore owns one persistent garbage-collection root:
+Nix-Lock used a persistent garbage-collection root:
 
 ```text
 ~/.local/state/nix-lock/candidate
 ```
 
-That root:
+This root served three purposes:
 
-* identifies the retained candidate
-* protects the candidate from garbage collection
-* provides a stable location from which the candidate can be inspected
+- Identifying the retained candidate.
+- Protecting the candidate from garbage collection.
+- Providing a stable reference for inspection and deployment.
 
-Nix continues to own storage, closure identity, activation, and garbage collection.
+The implementation relied on existing NixOS functionality wherever possible.
 
-Nix-Lock adds policy around when an already-built closure should be deployed.
+This approach kept the proof of concept relatively small and avoided unnecessary duplication of established mechanisms.
 
-## Project Goals
+## Original Project Goals
 
-Nix-Lock aims to:
+Nix-Lock was intended to:
 
-* Build immutable NixOS deployment candidates.
-* Preserve candidates unchanged.
-* Separate build time from deployment time.
-* Allow observation periods to be determined by deployment policy.
-* Deploy previously built system closures.
-* Preserve reproducibility.
-* Integrate with existing NixOS workflows.
-* Minimise operational complexity.
+- Build immutable NixOS deployment candidates.
+- Preserve candidates unchanged during an observation period.
+- Separate build time from deployment time.
+- Deploy previously built system closures.
+- Preserve reproducibility.
+- Allow normal system maintenance to continue.
+- Integrate with existing NixOS administration workflows.
+- Minimise additional operational complexity.
+
+The final two objectives proved particularly important when evaluating the project's success.
 
 ## Non-Goals
 
-Nix-Lock is **not** intended to:
+Nix-Lock was not intended to:
 
-* Replace NixOS generations.
-* Replace backups.
-* Snapshot user data.
-* Restore complete machine state.
-* Predict whether updates are safe.
-* Test packages.
-* Replace Git.
-* Replace existing NixOS tooling.
-* Require Home Manager.
-* Require users to redesign an existing NixOS configuration.
+- Replace NixOS generations.
+- Replace backups.
+- Snapshot user data.
+- Restore complete machine state.
+- Predict whether updates were safe.
+- Test individual packages.
+- Replace Git.
+- Replace existing NixOS tooling.
+- Require Home Manager.
 
-## Current Status
+## Experimental Validation
 
-Nix-Lock has completed its first full experimental deployment cycle.
+The first complete operational experiment began on August 1, 2026.
 
-The proof of concept can:
+A NixOS system closure was captured and protected using a persistent garbage-collection root.
 
-* build a NixOS system without activating it
-* identify the resulting immutable system closure
-* preserve that closure using a persistent garbage-collection root
-* verify that the retained closure is a valid NixOS system
-* report the currently retained candidate
-* safely replace an earlier candidate
-* deploy the exact retained closure without rebuilding it
-* verify that the deployed closure became `/run/current-system`
+The candidate remained unchanged while the computer continued through almost four weeks of ordinary use, configuration changes, rebuilds, and maintenance.
 
-The first complete real-world cycle began with a candidate captured on August 1, 2026:
-
-```text
-/nix/store/hg414yf21h392z8ik8yb1x1n29szak2w-nixos-system-nixos-26.05.6200.8623c4c20aa4
-```
-
-The candidate was retained while the computer continued through almost four weeks of ordinary use, system changes, rebuilds, and maintenance.
-
-At the end of the observation period, Nix-Lock confirmed that:
+At the end of the observation period, Nix-Lock confirmed:
 
 ```text
 Store path: present
@@ -189,71 +165,81 @@ GC protection: present
 NixOS system closure: valid
 ```
 
-The candidate was then deployed directly from the preserved closure.
+The retained candidate was subsequently activated without rebuilding it.
 
-After deployment:
+Independent verification using:
 
-```text
-/run/current-system
+```bash
+readlink -f /run/current-system
 ```
 
-resolved to the exact closure captured at the beginning of the observation period.
+confirmed that the running system matched the closure captured almost four weeks earlier.
 
-No reconstruction of the candidate from the current configuration or current package sources was required.
+The experiment demonstrated that:
 
-This completed the first demonstrated:
+- NixOS system closures can be built without activation.
+- Immutable closures can be preserved independently of subsequent configuration changes.
+- Retained closures can survive extended observation periods.
+- Previously built closures can be activated without rebuilding.
+- The activated system can be verified against the retained candidate.
 
-```text
-Capture → Observe → Deploy
-```
+The central technical hypothesis was therefore demonstrated successfully.
 
-cycle.
+## Final Evaluation
 
-A new candidate has subsequently been captured and retained, beginning the next observation cycle.
+Although the capture, retention, and deployment mechanisms worked, operational evaluation exposed a fundamental limitation.
 
-The central mechanism of Nix-Lock has therefore moved from hypothesis to demonstrated behaviour.
+A previously captured NixOS closure represents an entire operating system configuration at a particular point in time.
 
-## Development Approach
+Activating that closure does not selectively introduce delayed updates into the currently configured system.
 
-Nix-Lock is being developed experimentally.
+Instead, it activates the earlier system configuration, potentially reversing system-level changes made during the observation period.
 
-Assumptions are tested before additional abstraction or automation is introduced.
+This behaviour conflicted with the intended workflow.
 
-Failed approaches are documented rather than removed from the project history because they explain how the current design was reached and may help others avoid repeating the same investigation.
+The original objective was to delay deployment of selected system changes while preserving the normal evolution of the machine.
 
-The project should remain as small as its purpose allows.
+Nix-Lock could preserve and activate an earlier system closure, but it could not reconcile that closure with configuration changes introduced after capture.
 
-Where Nix already provides the required mechanism, Nix-Lock should use it rather than replace it.
+Consequently, the workflow offered insufficient practical advantage over NixOS's existing generation management and rollback mechanisms.
 
-Implementation should follow demonstrated need rather than anticipated complexity.
+The implementation achieved its immediate technical objectives but failed to deliver the intended operational benefits.
+
+## Project Conclusion
+
+**Nix-Lock did not meet its criteria for success.**
+
+The project successfully demonstrated that immutable NixOS system closures could be captured, preserved, and deployed at a later date.
+
+However, the resulting workflow introduced undesirable consequences and did not satisfy the original requirement to preserve ongoing system evolution while deploying delayed updates.
+
+Further development would have required reconsidering the fundamental approach rather than simply extending the existing implementation.
+
+Development was therefore discontinued.
+
+Nix-Lock remains publicly available as an engineering experiment documenting its original hypothesis, implementation, testing, findings, and eventual retirement.
+
+The project illustrates an important distinction between demonstrating that a mechanism works and establishing that the mechanism provides a useful solution.
 
 ## Documentation
 
-The project documentation records:
+The accompanying `nix-lock.org` document preserves the detailed development record, including:
 
-* the original problem
-* rejected approaches
-* experimental findings
-* architectural decisions
-* current implementation
-* demonstrated behaviour
-* remaining questions and possible future work
+- The original problem and design objectives.
+- Early hypotheses and rejected approaches.
+- Investigation of NixOS system closures.
+- Architectural decisions.
+- Implementation details.
+- Experimental observations.
+- The first complete deployment cycle.
+- The reasoning behind the project's conclusion.
 
-It is the authoritative description of the project's intended behaviour and the reasoning behind its design.
-
-## Contributing
-
-Ideas, experiments, corrections, and constructive feedback are welcome.
-
-Alternative approaches are particularly useful when they are accompanied by an explanation of what was tested and what was observed.
-
-The project deliberately favours simplicity over features.
-
-Proposed changes should support the central aim of separating system capture from system deployment without unnecessarily increasing operational complexity.
+Some sections reflect the project's status during active development and are retained as historical documentation.
 
 ## License
 
 This project is released under the MIT License.
 
--- Oggie --
+---
 
+*Oggie*
