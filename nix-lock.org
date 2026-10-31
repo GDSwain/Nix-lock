@@ -691,4 +691,9 @@ later deployed as the exact operating system originally preserved.
 The implementation remains deliberately small because Nix already
 provides almost everything the workflow requires.
 
+* Project Conclusion
+
+Nix-lock successfully demonstrated that a NixOS system closure could be captured, preserved and deployed at a later date. However, further testing revealed that this approach introduced undesirable consequences and ultimately failed to satisfy the project's original design criteria. Rather than selectively deploying the captured changes into the current system, Nix-lock effectively activated an earlier system state, potentially reversing changes made in the interim. This behaviour undermined the intended purpose of the tool and offered little practical advantage over NixOS's existing generation rollback mechanisms. Consequently, development has been discontinued. Although the implementation demonstrated technical feasibility, the project did not meet its criteria for success and is retained as a documented engineering experiment.
+
+
 -- Oggie --
